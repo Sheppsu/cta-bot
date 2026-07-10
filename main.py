@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 
 load_dotenv(override=True)
 
-from database import Database, GuildData
+from database import Database, GuildData, Ticket
 
 
 ANNOUNCEMENT_CHANNEL_ID = int(os.getenv("ANNOUNCEMENT_CHANNEL_ID"))
@@ -73,6 +73,11 @@ def forwarded_message_embed(message: discord.Message):
     return embed
 
 
+async def get_dm_channel(ticket: Ticket):
+    user = bot.get_user(ticket.creator_id) or (await bot.fetch_user(ticket.creator_id))
+    return user.dm_channel or (await user.create_dm())
+
+
 async def delayed_delete(channel: discord.TextChannel, delay: int):
     await asyncio.sleep(delay)
     await channel.delete()
@@ -100,17 +105,22 @@ class FinalTicketView(discord.ui.View):
                 )
                 return
 
-            ticket_channel = bot.get_channel(ticket.channel_id) or (
-                await bot.fetch_channel(ticket.channel_id)
-            )
-            if ticket.open_message_id:
-                open_msg = await ticket_channel.fetch_message(ticket.open_message_id)
-                await open_msg.delete()
-            await ticket_channel.send("Ticket has been reopened")
             await db.open_ticket(self.ticket_id)
-            await interaction.response.send_message(
-                "Ticket has been reopened", ephemeral=True
-            )
+
+        ticket_channel = bot.get_channel(ticket.channel_id) or (
+            await bot.fetch_channel(ticket.channel_id)
+        )
+        if ticket.open_message_id:
+            open_msg = await ticket_channel.fetch_message(ticket.open_message_id)
+            await open_msg.delete()
+
+        await ticket_channel.send("Ticket has been reopened")
+        if ticket.is_dm:
+            dm_channel = await get_dm_channel(ticket)
+            await dm_channel.send("The ticket has been reopened.")
+        await interaction.response.send_message(
+            "Ticket has been reopened", ephemeral=True
+        )
 
         log.info(f"Reopened ticket {ticket.id}")
 
@@ -131,25 +141,27 @@ class FinalTicketView(discord.ui.View):
                 )
                 return
 
-            ticket_channel = bot.get_channel(ticket.channel_id) or (
-                await bot.fetch_channel(ticket.channel_id)
-            )
-            await ticket_channel.send("This channel will be deleted in 5 seconds")
-            _ = bot.loop.create_task(delayed_delete(ticket_channel, 5))
             await db.delete_ticket(ticket.id)
-            await interaction.response.send_message(
-                "Ticket will be deleted", ephemeral=True
-            )
+
+        ticket_channel = bot.get_channel(ticket.channel_id) or (
+            await bot.fetch_channel(ticket.channel_id)
+        )
+        await ticket_channel.send("This channel will be deleted in 5 seconds")
+        _ = bot.loop.create_task(delayed_delete(ticket_channel, 5))
+
+        await interaction.response.send_message(
+            "Ticket will be deleted", ephemeral=True
+        )
 
         log.info(f"Deleted ticket {ticket.id}")
 
 
 class CloseTicketView(discord.ui.View):
-    def __init__(self, ticket_id: int):
+    def __init__(self, ticket_id: int, lock: asyncio.Lock):
         super().__init__(timeout=None)
 
         self.ticket_id: int = ticket_id
-        self.lock = asyncio.Lock()
+        self.lock = lock
 
     @discord.ui.button(label="Close", style=discord.ButtonStyle.primary, emoji="🔒")
     async def close_ticket(
@@ -174,17 +186,22 @@ class CloseTicketView(discord.ui.View):
             open_msg = await ticket_channel.send(
                 embed=closed_ticket_embed(), view=FinalTicketView(ticket.id)
             )
-            await ticket_channel.edit(
-                overwrites={
-                    k: v
-                    for k, v in ticket_channel.overwrites.items()
-                    if not isinstance(k, discord.Member) or k.id != ticket.creator_id
-                }
-            )
             await db.close_ticket(ticket.id, open_msg.id)
-            await interaction.response.send_message(
-                "Ticket has been closed", ephemeral=True
-            )
+
+        await ticket_channel.edit(
+            overwrites={
+                k: v
+                for k, v in ticket_channel.overwrites.items()
+                if not isinstance(k, discord.Member) or k.id != ticket.creator_id
+            }
+        )
+
+        await interaction.response.send_message(
+            "Ticket has been closed", ephemeral=True
+        )
+        if ticket.is_dm:
+            dm_channel = await get_dm_channel(ticket)
+            await dm_channel.send("The ticket has been closed.")
 
         log.info(f"Closed ticket {ticket.id}")
 
@@ -234,17 +251,23 @@ class CreateTicketView(discord.ui.View):
             category=category,
         )
 
+        lock = asyncio.Lock()
         channel_msg = await channel.send(
             embed=ticket_embed(ticket.id, interaction.user.id),
-            view=CloseTicketView(ticket.id),
+            view=CloseTicketView(ticket.id, lock),
         )
-        await db.update_open_ticket_data(ticket.id, channel.id, channel_msg.id)
+
         if is_dm:
             try:
-                await interaction.user.send(embed=dm_ticket_embed())
+                dm_msg = await interaction.user.send(
+                    embed=dm_ticket_embed(), view=CloseTicketView(ticket.id, lock)
+                )
                 await interaction.response.send_message(
                     "Ticket was created. Communication will take place in DMs with CTA Bot.",
                     ephemeral=True,
+                )
+                await db.update_open_ticket_data(
+                    ticket.id, channel.id, channel_msg.id, dm_msg.id
                 )
             except discord.Forbidden:
                 overwrites[interaction.user] = see_perms
@@ -255,9 +278,15 @@ class CreateTicketView(discord.ui.View):
                     "Enable DMs from server members to use DM tickets.",
                     ephemeral=True,
                 )
+                await db.update_open_ticket_data(
+                    ticket.id, channel.id, channel_msg.id, None
+                )
         else:
             await interaction.response.send_message(
                 f"Ticket was created: {channel.mention}", ephemeral=True
+            )
+            await db.update_open_ticket_data(
+                ticket.id, channel.id, channel_msg.id, None
             )
 
         log.info(f"Created ticket {ticket.id}")
@@ -319,10 +348,17 @@ async def on_ready():
             await bot.fetch_channel(ticket.channel_id)
         )
         close_msg = await channel.fetch_message(ticket.close_message_id)
+        lock = asyncio.Lock()
         await close_msg.edit(
             embed=ticket_embed(ticket.id, ticket.creator_id),
-            view=CloseTicketView(ticket.id),
+            view=CloseTicketView(ticket.id, lock),
         )
+        if ticket.is_dm and ticket.dm_close_message_id:
+            dm_channel = await get_dm_channel(ticket)
+            dm_close_msg = await dm_channel.fetch_message(ticket.dm_close_message_id)
+            await dm_close_msg.edit(
+                embed=dm_ticket_embed(), view=CloseTicketView(ticket.id, lock)
+            )
         if not ticket.is_open and ticket.open_message_id:
             open_msg = await channel.fetch_message(ticket.open_message_id)
             await open_msg.edit(
@@ -342,6 +378,7 @@ async def forward_message_to(ticket_id: int, sendable, message: discord.Message)
         ticket_id,
         message.author.id,
         message.author.name,
+        message.id,
         message.content,
         message.created_at,
         attachment_urls,

@@ -20,6 +20,7 @@ class Ticket:
     is_dm: bool
     close_message_id: int | None
     open_message_id: int | None
+    dm_close_message_id: int | None
 
 
 @dataclass(slots=True)
@@ -27,6 +28,7 @@ class TicketMessage:
     id: int
     sender_id: int
     sender_name: str
+    message_id: int
     message: str
     sent_at: datetime
     attachment_urls: list[str]
@@ -77,7 +79,8 @@ class Database:
                     is_deleted,
                     is_dm,
                     close_message_id,
-                    open_message_id
+                    open_message_id,
+                    dm_close_message_id
                 FROM ticket
                 WHERE is_deleted = %s
                 """,
@@ -99,7 +102,8 @@ class Database:
                     is_deleted,
                     is_dm,
                     close_message_id,
-                    open_message_id
+                    open_message_id,
+                    dm_close_message_id
                 FROM ticket
                 WHERE id = %s
                 """,
@@ -121,7 +125,8 @@ class Database:
                     is_deleted,
                     is_dm,
                     close_message_id,
-                    open_message_id
+                    open_message_id,
+                    dm_close_message_id
                 FROM ticket
                 WHERE channel_id = %s
                 LIMIT 1
@@ -144,7 +149,8 @@ class Database:
                     is_deleted,
                     is_dm,
                     close_message_id,
-                    open_message_id
+                    open_message_id,
+                    dm_close_message_id
                 FROM ticket
                 WHERE creator_id = %s AND is_open = %s
                 """,
@@ -164,8 +170,9 @@ class Database:
                     is_deleted,
                     is_dm,
                     close_message_id,
-                    open_message_id
-                ) VALUES (%s, null, true, false, %s, null, null)
+                    open_message_id,
+                    dm_close_message_id
+                ) VALUES (%s, null, true, false, %s, null, null, null)
                 RETURNING id
                 """,
                 (creator_id, is_dm),
@@ -179,19 +186,24 @@ class Database:
                 is_dm,
                 None,
                 None,
+                None,
             )
 
     async def update_open_ticket_data(
-        self, ticket_id: int, channel_id: int, close_message_id: int
+        self,
+        ticket_id: int,
+        channel_id: int,
+        close_message_id: int,
+        dm_close_message_id: int | None,
     ) -> None:
         async with await self.connect() as conn:
             cursor = conn.cursor()
             await cursor.execute(
                 """
-                UPDATE ticket SET channel_id = %s, close_message_id = %s
+                UPDATE ticket SET channel_id = %s, close_message_id = %s, dm_close_message_id = %s
                 WHERE id = %s
                 """,
-                (channel_id, close_message_id, ticket_id),
+                (channel_id, close_message_id, dm_close_message_id, ticket_id),
             )
 
     async def update_closed_ticket_data(self, ticket_id: int, open_message_id: int):
@@ -257,6 +269,7 @@ class Database:
         ticket_id: int,
         sender_id: int,
         sender_name: str,
+        message_id: int,
         message: str,
         sent_at: datetime,
         attachment_urls,
@@ -269,12 +282,20 @@ class Database:
                     ticket_id,
                     sender_id,
                     sender_name,
+                    message_id,
                     message,
                     sent_at
-                ) VALUES (%s, %s, %s, %s, %s)
+                ) VALUES (%s, %s, %s, %s, %s, %s)
                 RETURNING id
                 """,
-                (ticket_id, sender_id, sender_name, message, sent_at.isoformat()),
+                (
+                    ticket_id,
+                    sender_id,
+                    sender_name,
+                    message_id,
+                    message,
+                    sent_at.isoformat(),
+                ),
             )
             message_id = (await cursor.fetchone())[0]
             await cursor.executemany(
@@ -284,5 +305,11 @@ class Database:
                 [(message_id, attachment_url) for attachment_url in attachment_urls],
             )
             return TicketMessage(
-                message_id, sender_id, sender_name, message, sent_at, attachment_urls
+                message_id,
+                sender_id,
+                sender_name,
+                message_id,
+                message,
+                sent_at,
+                attachment_urls,
             )
