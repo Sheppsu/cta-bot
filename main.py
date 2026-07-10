@@ -414,12 +414,19 @@ async def on_message(message: discord.Message):
 
     if message.channel.name.startswith("ticket"):
         ticket = await db.get_ticket_by_channel(message.channel.id)
-        if (
-            ticket is None
-            or not ticket.is_open
-            or ticket.is_deleted
-            or not ticket.is_dm
-        ):
+        if ticket is None or not ticket.is_open or ticket.is_deleted:
+            return
+
+        await db.save_ticket_message(
+            ticket.id,
+            message.author.id,
+            message.author.name,
+            message.id,
+            message.content,
+            message.created_at,
+            [attachment.url for attachment in message.attachments],
+        )
+        if not ticket.is_dm:
             return
 
         user = bot.get_user(ticket.creator_id) or (
