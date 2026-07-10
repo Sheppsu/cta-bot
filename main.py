@@ -215,7 +215,6 @@ class CreateTicketView(discord.ui.View):
             name=f"ticket-{ticket.id}",
             overwrites=overwrites,
             category=category,
-            topic=f"Ticket for {interaction.user.name} (ID: {interaction.user.id})",
         )
 
         channel_msg = await channel.send(
@@ -227,7 +226,8 @@ class CreateTicketView(discord.ui.View):
             try:
                 await interaction.user.send(embed=dm_ticket_embed())
                 await interaction.response.send_message(
-                    "Ticket was created. Communication will take place in DMs with CTA Bot."
+                    "Ticket was created. Communication will take place in DMs with CTA Bot.",
+                    ephemeral=True,
                 )
             except discord.Forbidden:
                 overwrites[interaction.user] = see_perms
