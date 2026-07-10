@@ -24,20 +24,22 @@ TABLESPACE pg_default;
 ALTER TABLE IF EXISTS public.ticket
     OWNER to postgres;
 
-CREATE TABLE IF NOT EXISTS public.ticket
+CREATE TABLE IF NOT EXISTS public.ticket_message
 (
-    creator_id bigint NOT NULL,
+    ticket_id bigint NOT NULL,
+    message text COLLATE pg_catalog."default" NOT NULL,
+    sent_at timestamp with time zone NOT NULL,
+    sender_id bigint NOT NULL,
+    sender_name text COLLATE pg_catalog."default" NOT NULL,
     id bigint NOT NULL GENERATED ALWAYS AS IDENTITY ( INCREMENT 1 START 1 MINVALUE 1 MAXVALUE 9223372036854775807 CACHE 1 ),
-    is_open boolean NOT NULL,
-    channel_id bigint,
-    is_dm boolean NOT NULL,
-    close_message_id bigint,
-    open_message_id bigint,
-    is_deleted boolean,
-    CONSTRAINT transcript_pkey PRIMARY KEY (id)
+    CONSTRAINT ticket_message_pkey PRIMARY KEY (id),
+    CONSTRAINT ticket FOREIGN KEY (ticket_id)
+        REFERENCES public.ticket (id) MATCH SIMPLE
+        ON UPDATE NO ACTION
+        ON DELETE NO ACTION
 )
 TABLESPACE pg_default;
-ALTER TABLE IF EXISTS public.ticket
+ALTER TABLE IF EXISTS public.ticket_message
     OWNER to postgres;
 
 CREATE TABLE IF NOT EXISTS public.ticket_message_attachment
