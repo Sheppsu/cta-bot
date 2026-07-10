@@ -94,6 +94,11 @@ class FinalTicketView(discord.ui.View):
                     "Ticket already open", ephemeral=True
                 )
                 return
+            if ticket.is_deleted:
+                await interaction.response.send_message(
+                    "Ticket has been marked for deletion", ephemeral=True
+                )
+                return
 
             ticket_channel = bot.get_channel(ticket.channel_id) or (
                 await bot.fetch_channel(ticket.channel_id)
@@ -118,6 +123,11 @@ class FinalTicketView(discord.ui.View):
             if ticket.is_deleted:
                 await interaction.response.send_message(
                     "Ticket is already marked for deletion", ephemeral=True
+                )
+                return
+            if ticket.is_open:
+                await interaction.response.send_message(
+                    "Ticket is still open", ephemeral=True
                 )
                 return
 
