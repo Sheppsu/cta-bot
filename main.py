@@ -34,7 +34,7 @@ def ticket_creation_view_embed():
         description="Use tickets to ask question directly with staff "
         "or verify solution steps for certain achievements.\n\n"
         "Use DM tickets for solution verification to avoid "
-        "the possibility that someone else snipes your completion.",
+        "the possibility that someone else snipes your completion through certain Discord plugins.",
         color=discord.Color.yellow(),
     )
 
@@ -80,7 +80,7 @@ async def delayed_delete(channel: discord.TextChannel, delay: int):
 
 class FinalTicketView(discord.ui.View):
     def __init__(self, ticket_id: int):
-        super().__init__()
+        super().__init__(timeout=None)
 
         self.ticket_id = ticket_id
         self.lock = asyncio.Lock()
@@ -136,7 +136,7 @@ class FinalTicketView(discord.ui.View):
 
 class CloseTicketView(discord.ui.View):
     def __init__(self, ticket_id: int):
-        super().__init__()
+        super().__init__(timeout=None)
 
         self.ticket_id: int = ticket_id
         self.lock = asyncio.Lock()
