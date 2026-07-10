@@ -174,6 +174,13 @@ class CloseTicketView(discord.ui.View):
             open_msg = await ticket_channel.send(
                 embed=closed_ticket_embed(), view=FinalTicketView(ticket.id)
             )
+            await ticket_channel.edit(
+                overwrites={
+                    k: v
+                    for k, v in ticket_channel.overwrites.items()
+                    if not isinstance(k, discord.Member) or k.id != ticket.creator_id
+                }
+            )
             await db.close_ticket(ticket.id, open_msg.id)
             await interaction.response.send_message(
                 "Ticket has been closed", ephemeral=True
