@@ -62,6 +62,12 @@ def closed_ticket_embed():
     )
 
 
+def see_channel_perms() -> discord.PermissionOverwrite:
+    return discord.PermissionOverwrite(
+        view_channel=True, send_messages=True, read_message_history=True
+    )
+
+
 def forwarded_message_embed(message: discord.Message):
     embed = discord.Embed(
         description=message.content or None,
@@ -113,6 +119,23 @@ class FinalTicketView(discord.ui.View):
         if ticket.open_message_id:
             open_msg = await ticket_channel.fetch_message(ticket.open_message_id)
             await open_msg.delete()
+
+        # return access to the channel
+        if not ticket.is_dm:
+            user = interaction.guild.get_member(
+                ticket.creator_id
+            ) or await interaction.guild.fetch_member(ticket.creator_id)
+            if user:
+                overwrites = ticket_channel.overwrites
+                overwrites.update({user: see_channel_perms()})
+                await ticket_channel.edit(
+                    overwrites=overwrites,
+                    name=f"ticket-{ticket.id}",
+                )
+            else:
+                await ticket_channel.send(
+                    "Could not find user who originally made the ticket"
+                )
 
         await ticket_channel.send("Ticket has been reopened")
         if ticket.is_dm:
@@ -188,13 +211,16 @@ class CloseTicketView(discord.ui.View):
             )
             await db.close_ticket(ticket.id, open_msg.id)
 
-        await ticket_channel.edit(
-            overwrites={
-                k: v
-                for k, v in ticket_channel.overwrites.items()
-                if not isinstance(k, discord.Member) or k.id != ticket.creator_id
-            }
-        )
+        # remove user perms to the channel
+        if not ticket.is_dm:
+            await ticket_channel.edit(
+                overwrites={
+                    k: v
+                    for k, v in ticket_channel.overwrites.items()
+                    if not isinstance(k, discord.Member) or k.id != ticket.creator_id
+                },
+                name=f"closed-{ticket.id}",
+            )
 
         await interaction.response.send_message(
             "Ticket has been closed", ephemeral=True
@@ -235,9 +261,7 @@ class CreateTicketView(discord.ui.View):
 
             ticket = await db.create_ticket(interaction.user.id, is_dm)
 
-        see_perms = discord.PermissionOverwrite(
-            view_channel=True, send_messages=True, read_message_history=True
-        )
+        see_perms = see_channel_perms()
         overwrites = {
             guild.default_role: discord.PermissionOverwrite(view_channel=False),
             staff_role: see_perms,
