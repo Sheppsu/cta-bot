@@ -136,6 +136,8 @@ class FinalTicketView(discord.ui.View):
                 await ticket_channel.send(
                     "Could not find user who originally made the ticket"
                 )
+        else:
+            await ticket_channel.edit(name=f"ticket-{ticket.id}")
 
         await ticket_channel.send("Ticket has been reopened")
         if ticket.is_dm:
@@ -221,6 +223,8 @@ class CloseTicketView(discord.ui.View):
                 },
                 name=f"closed-{ticket.id}",
             )
+        else:
+            await ticket_channel.edit(name=f"closed-{ticket.id}")
 
         await interaction.response.send_message(
             "Ticket has been closed", ephemeral=True
