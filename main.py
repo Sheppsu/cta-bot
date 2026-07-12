@@ -226,12 +226,13 @@ class CloseTicketView(discord.ui.View):
         else:
             await ticket_channel.edit(name=f"closed-{ticket.id}")
 
-        await interaction.response.send_message(
-            "Ticket has been closed", ephemeral=True
-        )
         if ticket.is_dm:
             dm_channel = await get_dm_channel(ticket)
             await dm_channel.send("The ticket has been closed.")
+
+        await interaction.response.send_message(
+            "Ticket has been closed", ephemeral=True
+        )
 
         log.info(f"Closed ticket {ticket.id}")
 
@@ -290,31 +291,31 @@ class CreateTicketView(discord.ui.View):
                 dm_msg = await interaction.user.send(
                     embed=dm_ticket_embed(), view=CloseTicketView(ticket.id, lock)
                 )
+                await db.update_open_ticket_data(
+                    ticket.id, channel.id, channel_msg.id, dm_msg.id
+                )
                 await interaction.response.send_message(
                     "Ticket was created. Communication will take place in DMs with CTA Bot.",
                     ephemeral=True,
-                )
-                await db.update_open_ticket_data(
-                    ticket.id, channel.id, channel_msg.id, dm_msg.id
                 )
             except discord.Forbidden:
                 overwrites[interaction.user] = see_perms
                 await channel.edit(overwrites=overwrites)
                 await db.update_ticket_type(ticket.id, False)
+                await db.update_open_ticket_data(
+                    ticket.id, channel.id, channel_msg.id, None
+                )
                 await interaction.response.send_message(
                     f"I was unable to DM you, so the ticket was changed into a channel ticket: {channel.mention}. "
                     "Enable DMs from server members to use DM tickets.",
                     ephemeral=True,
                 )
-                await db.update_open_ticket_data(
-                    ticket.id, channel.id, channel_msg.id, None
-                )
         else:
-            await interaction.response.send_message(
-                f"Ticket was created: {channel.mention}", ephemeral=True
-            )
             await db.update_open_ticket_data(
                 ticket.id, channel.id, channel_msg.id, None
+            )
+            await interaction.response.send_message(
+                f"Ticket was created: {channel.mention}", ephemeral=True
             )
 
         log.info(f"Created ticket {ticket.id}")
